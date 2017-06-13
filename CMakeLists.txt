@@ -90,7 +90,7 @@ find_package(Threads REQUIRED)
 
 set(VIZDOOM_OUTPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 set(VIZDOOM_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
-set(VIZDOOM_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
+set(VIZDOOM_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src/lib/boost_process)
 set(VIZDOOM_LIB_SRC_DIR ${VIZDOOM_SRC_DIR}/lib)
 set(VIZDOOM_LIB_INCLUDE_DIR ${VIZDOOM_INCLUDE_DIR} ${VIZDOOM_LIB_SRC_DIR})
 set(VIZDOOM_OUTPUT_NAME vizdoom)
@@ -157,13 +157,35 @@ add_subdirectory(${VIZDOOM_SRC_DIR}/vizdoom)
 if (BUILD_PYTHON AND (NOT BUILD_PYTHON3))
 
     find_package(PythonInterp 2 REQUIRED)
-
-    STRING(REGEX REPLACE "([0-9.]+)\\.[0-9]+" "\\1" python_version ${PYTHON_VERSION_STRING})
-    find_package(PythonLibs ${python_version} REQUIRED)
-
-    find_package(Boost COMPONENTS python REQUIRED)
-
+    find_package(PythonLibs 2 REQUIRED)
     find_package(NumPy REQUIRED)
+
+    # Use ViZDoom's custom version of Boost.Python
+    # Use ViZDoom's custom version of Boost.Python
+    if (UNIX)
+        add_custom_target(prepare_boost_python ALL
+                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python/build_boost_python.sh
+                2.7 ${PYTHON_EXECUTABLE} ${PYTHON_INCLUDE_DIRS} ${PYTHON_LIBRARIES}
+                COMMENT "Building Boost.Python for ${PYTHON_EXECUTABLE}")
+    endif ()
+
+    if (WIN32)
+        add_library(boost_python STATIC IMPORTED GLOBAL)
+        set_property(TARGET boost_python PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python/stage/lib/libboost_python.lib)
+    endif()
+
+    if (UNIX)
+        add_library(boost_python SHARED IMPORTED GLOBAL)
+
+        if (APPLE)
+            set_property(TARGET boost_python PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python/stage/lib/libboost_python.dylib)
+        else()
+            set_property(TARGET boost_python PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python/stage/lib/libboost_python.so)
+        endif()
+    endif()
+
+    set(BOOST_PYTHON_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python/)
+
 
     set(VIZDOOM_PYTHON2_OUTPUT_DIR ${VIZDOOM_OUTPUT_DIR}/python2)
     set(VIZDOOM_PYTHON_SRC_DIR ${VIZDOOM_SRC_DIR}/lib_python)
@@ -173,21 +195,19 @@ if (BUILD_PYTHON AND (NOT BUILD_PYTHON3))
             ${VIZDOOM_LIBS}
             ${Boost_LIBRARIES}
             ${PYTHON_LIBRARIES}
-            ${NUMPY_LIBRARIES})
+            ${NUMPY_LIBRARIES}
+            boost_python)
 
     include_directories(${VIZDOOM_PYTHON_INCLUDE_DIR}
             ${Boost_INCLUDE_DIR}
             ${PYTHON_INCLUDE_DIRS}
-            ${NUMPY_INCLUDES})
+            ${NUMPY_INCLUDES}
+            ${BOOST_PYTHON_INCLUDE})
 
     set(VIZDOOM_PYTHON_SOURCES
             ${VIZDOOM_PYTHON_SRC_DIR}/ViZDoomGamePython.h
             ${VIZDOOM_PYTHON_SRC_DIR}/ViZDoomGamePython.cpp
             ${VIZDOOM_PYTHON_SRC_DIR}/ViZDoomPythonModule.cpp)
-
-    if (WIN32)
-        add_definitions(-DBOOST_PYTHON_STATIC_LIB)
-    endif ()
 
     python_add_module(libvizdoom_python ${VIZDOOM_PYTHON_SOURCES})
     target_link_libraries(libvizdoom_python ${VIZDOOM_PYTHON_LIBS} libvizdoom_static)
@@ -202,13 +222,15 @@ if (BUILD_PYTHON AND (NOT BUILD_PYTHON3))
             OUTPUT_NAME vizdoom
             PROJECT_LABEL "Python 2 binding")
 
+    add_dependencies(libvizdoom_python prepare_boost_python boost_python)
+
     if (UNIX)
         add_custom_target(python_pip_package ALL
                 COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/assemble_pip_package.sh 2
                 COMMENT "Assembling pip package in ${VIZDOOM_PYTHON2_OUTPUT_DIR}/pip_package")
 
         # vizdoom, vizdoom.pk3 and freedoom2.wad are needed to assemble the package
-        add_dependencies(python_pip_package libvizdoom_python vizdoom pk3 freedoom2)
+        add_dependencies(libvizdoom_python libvizdoom_python vizdoom pk3 freedoom2)
     endif ()
 
 endif ()
@@ -217,28 +239,36 @@ endif ()
 if (BUILD_PYTHON3)
 
     find_package(PythonInterp 3 REQUIRED)
+    STRING(REGEX REPLACE "([0-9.]+)\\.[0-9]+" "\\1" PYTHON3_VERSION ${PYTHON_VERSION_STRING})
+    find_package(PythonLibs ${PYTHON3_VERSION} REQUIRED)
+    find_package(NumPy REQUIRED)
 
-    # 3.5.2 => 3.5
-    STRING(REGEX REPLACE "([0-9.]+)\\.[0-9]+" "\\1" python3_version ${PYTHON_VERSION_STRING})
-    find_package(PythonLibs ${python3_version} REQUIRED)
 
-    # 3.5 => 35 (at least on Ubuntu 16.04 the library is called libboost_python-py35.so)
-    STRING(REGEX REPLACE "\\." "" python3_version ${python3_version})
-    find_package(Boost QUIET COMPONENTS python-py${python3_version})
-    if (${Boost_PYTHON-PY${python3_version}_FOUND})
-        MESSAGE(STATUS "Found Boost python3:")
-        MESSAGE(STATUS "   ${Boost_PYTHON-PY${python3_version}_LIBRARY}")
-    else ()
-        find_package(Boost QUIET COMPONENTS python3)  # The name under OSX (macports)
-        if (${Boost_PYTHON3_FOUND})
-            MESSAGE(STATUS "Found Boost python3:")
-            Message(STATUS "  ${Boost_PYTHON3_LIBRARY}")
-        else ()
-            MESSAGE(FATAL_ERROR "Could not find boost python3")
-        endif ()
+    # Use ViZDoom's custom version of Boost.Python
+    if (UNIX)
+        add_custom_target(prepare_boost_python3 ALL
+                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python/build_boost_python.sh
+                ${PYTHON3_VERSION} ${PYTHON_EXECUTABLE} ${PYTHON_INCLUDE_DIRS} ${PYTHON_LIBRARIES}
+                COMMENT "Building Boost.Python for ${PYTHON_EXECUTABLE}")
     endif ()
 
-    find_package(NumPy REQUIRED)
+    if (WIN32)
+        add_library(boost_python3 STATIC IMPORTED GLOBAL)
+        set_property(TARGET boost_python3 PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python/stage/lib/libboost_python3.lib)
+    endif()
+
+    if (UNIX)
+        add_library(boost_python3 SHARED IMPORTED GLOBAL)
+
+        if (APPLE)
+            set_property(TARGET boost_python3 PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python/stage/lib/libboost_python3.dylib)
+        else()
+            set_property(TARGET boost_python3 PROPERTY IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python/stage/lib/libboost_python3.so)
+        endif()
+    endif()
+
+    set(BOOST_PYTHON_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/src/lib_python/boost_python)
+
 
     set(VIZDOOM_PYTHON3_OUTPUT_DIR ${VIZDOOM_OUTPUT_DIR}/python3)
     set(VIZDOOM_PYTHON_SRC_DIR ${VIZDOOM_SRC_DIR}/lib_python)
@@ -248,21 +278,19 @@ if (BUILD_PYTHON3)
             ${VIZDOOM_LIBS}
             ${Boost_LIBRARIES}
             ${PYTHON_LIBRARIES}
-            ${NUMPY_LIBRARIES})
+            ${NUMPY_LIBRARIES}
+            boost_python3)
 
     include_directories(${VIZDOOM_PYTHON_INCLUDE_DIR}
             ${Boost_INCLUDE_DIR}
             ${PYTHON_INCLUDE_DIRS}
-            ${NUMPY_INCLUDES})
+            ${NUMPY_INCLUDES}
+            ${BOOST_PYTHON_INCLUDE})
 
     set(VIZDOOM_PYTHON_SOURCES
             ${VIZDOOM_PYTHON_SRC_DIR}/ViZDoomGamePython.h
             ${VIZDOOM_PYTHON_SRC_DIR}/ViZDoomGamePython.cpp
             ${VIZDOOM_PYTHON_SRC_DIR}/ViZDoomPythonModule.cpp)
-
-    if (WIN32)
-        add_definitions(-DBOOST_PYTHON_STATIC_LIB)
-    endif ()
 
     python_add_module(libvizdoom_python3 ${VIZDOOM_PYTHON_SOURCES})
     target_link_libraries(libvizdoom_python3 ${VIZDOOM_PYTHON3_LIBS} libvizdoom_static)
@@ -278,7 +306,7 @@ if (BUILD_PYTHON3)
             PROJECT_LABEL "Python 3 binding")
 
 
-    add_dependencies(libvizdoom_python3 vizdoom pk3 freedoom2)
+    add_dependencies(libvizdoom_python3 prepare_boost_python3 boost_python3)
 
     if (UNIX)
         add_custom_target(python3_pip_package ALL
@@ -298,11 +326,8 @@ endif ()
 if (BUILD_LUA AND (NOT BUILD_LUA52))
 
     # Use ViZDoom's custom version of luabind
-    #find_package(Luabind REQUIRED)
     add_subdirectory(${VIZDOOM_SRC_DIR}/lib_lua/luabind)
-
     find_package(Lua51 REQUIRED)
-    #find_package(Torch REQUIRED)
 
     set(VIZDOOM_LUA_OUTPUT_DIR ${VIZDOOM_OUTPUT_DIR}/lua)
     set(VIZDOOM_LUA_SRC_DIR ${VIZDOOM_SRC_DIR}/lib_lua)
@@ -312,8 +337,6 @@ if (BUILD_LUA AND (NOT BUILD_LUA52))
             ${VIZDOOM_LIBS}
             ${Boost_LIBRARIES}
             ${LUA_LIBRARIES}
-            #${LUABIND_LIBRARIES}
-            #${VIZDOOM_SRC_DIR}/lib_lua/luabind/src/libluabind.a
             luabind)
 
     include_directories(${VIZDOOM_LUA_INCLUDE_DIR}

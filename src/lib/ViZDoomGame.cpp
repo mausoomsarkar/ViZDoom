@@ -475,9 +475,7 @@ namespace vizdoom {
 
     bool DoomGame::isAutomapBufferEnabled() { return this->doomController->isAutomapEnabled(); }
 
-    void DoomGame::setAutomapBufferEnabled(bool automapBuffer) {
-        this->doomController->setAutomapEnabled(automapBuffer);
-    }
+    void DoomGame::setAutomapBufferEnabled(bool automapBuffer) { this->doomController->setAutomapEnabled(automapBuffer); }
 
     void DoomGame::setAutomapMode(AutomapMode mode) { this->doomController->setAutomapMode(mode); }
 
@@ -500,6 +498,7 @@ namespace vizdoom {
     void DoomGame::setRenderEffectsSprites(bool sprites) { this->doomController->setRenderEffectsSprites(sprites); }
 
     void DoomGame::setRenderMessages(bool messages) { this->doomController->setRenderMessages(messages); }
+
     void DoomGame::setRenderCorpses(bool corpses) { this->doomController->setRenderCorpses(corpses); }
 
     void DoomGame::setWindowVisible(bool visibility) {

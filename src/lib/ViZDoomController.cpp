@@ -491,8 +491,7 @@ namespace vizdoom {
 
     std::string DoomController::getConfigPath() { return this->configPath; }
 
-    void
-    DoomController::setConfigPath(std::string configPath) { if (!this->doomRunning) this->configPath = configPath; }
+    void DoomController::setConfigPath(std::string configPath) { if (!this->doomRunning) this->configPath = configPath; }
 
     int DoomController::getSkill() { return this->skill; }
 
